@@ -1,115 +1,197 @@
-# Flowless
+# Flow Less — monitoring bloods without the paperwork
+
+A prototype of the relay: a patient takes an opaque code to **any** collection unit, the sample
+carries that code to the lab on a printed barcode, and the result routes itself back to the
+requesting clinician. Four actors, four screens, one laptop.
+
+**All data is fictional.** No backend, no network, nothing is sent anywhere. The NHS App screen is
+a concept mockup, not an integration.
 
 ---
 
-**A closed-loop diagnostic coordination layer that lets specialist diagnostic requests travel with the patient to a convenient collection site, while routing results back to the clinical team responsible for their care.**
+## Run it
 
-## Live prototype
+Double-click `index.html`. That is the whole setup.
 
-👉 **[Launch Flowless](https://flowless2.netlify.app)**
+No build step, no `npm install`, no server, no internet. Plain `<script>` tags rather than ES
+modules, precisely so `file://` works — modules are blocked by CORS from the filesystem, which
+would have made a laptop demo fail in the room.
 
-**Demo flow:** Hospital → Patient → Collection Unit → Laboratory → Responsible Specialist Team
-
-> Hackathon prototype using synthetic/demo patient data.
-
----
-
-
-A location-agnostic diagnostic monitoring request and result-routing layer (hackathon prototype).
-
-A specialist creates a monitoring plan once. The system creates portable diagnostic requests that
-can be fulfilled at any participating local phlebotomy provider. Results route directly back to the
-requesting specialist/team. Recurring plans create the next request at clinician-defined intervals.
-
-**All data is fictional. No real NHS/EHR/lab integration. No LLM. No authentication.**
-
-## Setup
+If you would rather serve it (nicer URLs in the address bar for the audience):
 
 ```bash
-npm install
-cp .env.example .env   # optional — all variables have defaults
-npm run dev            # http://localhost:5173
+python3 -m http.server 8080     # then open http://localhost:8080
 ```
 
-| Command             | What it does                    |
-| ------------------- | ------------------------------- |
-| `npm run dev`       | dev server                      |
-| `npm run build`     | typecheck + production build    |
-| `npm run check`     | lint + typecheck + tests        |
-| `npm test`          | vitest (domain + UI smoke)      |
-| `npm run lint`      | oxlint                          |
-| `npm run typecheck` | `tsc -b --noEmit`               |
+Run the tests:
 
-## Demo scenarios (deterministic)
+```bash
+node tests/run.js               # 31 tests, no framework, no install
+```
 
-The demo clock is frozen at **2026-09-05** (`DEMO_NOW` in `src/data/demo/index.ts`) so the scenarios
-never drift. "Reset demo" restores both.
+---
 
-| Request | Patient (fictional) | Scenario |
+## The demo script
+
+Roughly three minutes. The header tabs switch between actors — each is a hash change, so the
+in-memory state survives the whole walkthrough. **Do not reload the page mid-demo.**
+
+1. **Hospital** — you land on Aisha Demo-Kaur, an INR plan repeating every 28 days. Point out the
+   access code panel: *"the QR carries this code and nothing else."*
+2. **+ New plan** — create one live if you have time (30 seconds: name, DOB, NHS number, a test or
+   two, an adjustment). Otherwise skip and keep using Aisha.
+3. **Issue QR to patient**, then **Notify patient** → shows the email and SMS that would go out.
+   Sending records it in the history; no provider is contacted.
+4. **Print patient letter** — the paper route, for the patient with no smartphone. Real QR, real
+   code in plain type underneath.
+5. **Collection unit** tab → the code is pre-filled as a shortcut, or type it. Note that
+   **reasonable adjustments are the first thing on the page** — the phlebotomist knows before the
+   patient has to explain.
+6. **QR presented and scanned** → **Sample collected** → **Print specimen label**. This is the
+   answer to *"how does the token reach the lab when the patient has gone home?"* It travels on the
+   tube, as a Code 39 barcode. Nothing identifying is on the label.
+7. **Laboratory** tab → scan/type the same code → **Lab receives specimen** → enter a result.
+   The lab is a real actor here, not a "Simulate" button on the hospital's screen.
+8. Entering the result **routes it automatically** — back on the **Hospital** tab it is now awaiting
+   review, addressed to the named clinician at the resolved ODS site. Review it, and the next
+   occurrence of the recurring plan is scheduled on the spot.
+9. **The failure case** — open Tom Demo-Whyte. His sample was taken at RRK07, a site that is not in
+   the results-distribution directory. The lab did its job, the result exists, and it has **nowhere
+   to go**. That is the failure this project removes; a human has to route it by hand.
+10. **Patient** tab → the NHS App concept mockup. Labelled on screen as a concept, twice.
+
+**Reset demo** in the header restores the seed at any point. Deterministic, safe to repeat.
+
+> **Do not reload the page, and do not open a screen in a new tab.** Everything lives in the tab's
+> memory — that is the whole point of the no-backend rescope. A reload re-seeds the demo with fresh
+> access codes, so any code you were mid-way through stops existing. Every link in the app is a
+> same-tab hash change for exactly this reason. If it does happen, the print screens explain it and
+> put you one click from the console.
+
+---
+
+## What is real and what is not
+
+Worth being straight about this if anyone asks — the honest version is more persuasive than the
+hand-wave.
+
+| | Status |
+| --- | --- |
+| Workflow state machine, guards, role enforcement | **Real.** Pure functions, unit tested. |
+| QR codes | **Real.** Hand-written ISO/IEC 18004 encoder, verified by decoding the rendered pixels. |
+| Specimen barcode | **Real** Code 39, verified the same way — scan the screen with a barcode app. |
+| SNOMED CT codes | **Real** concept ids, verified against a terminology server (caveats below). |
+| ODS trust code `RRK` | **Real** — University Hospitals Birmingham NHS Foundation Trust. |
+| ODS site codes, ward codes | **Structured like the real thing**, names illustrative. Ward codes are trust-invented by design — the NHS has no national registry at that granularity. |
+| Result routing | **Real logic** against a directory, but the directory is three rows of demo data. |
+| Cross-device phone scanning | **No.** One laptop, hash-routed screens. Scanning a QR pointing at `file://` would not open on a phone. |
+| Email / SMS delivery | **Simulated.** No provider is contacted; sending writes a history note. |
+| NHS App | **Concept mockup only.** No API, no affiliation, no endorsement. |
+| Backend, database, multi-device sync | **None.** In-memory, single tab. |
+
+### SNOMED CT codes
+
+Ordered tests carry **procedure** concepts, because NHS England's pathology standards say procedure
+concepts represent test *requests* and observable entities represent *results*. Both are stored.
+
+| Panel | Order code (procedure) | Result code (observable) |
 | --- | --- | --- |
-| `PLAN-DEMO-001-R01` | Jordan Sample — INR every 28 days | **Golden path.** Valid 1–15 Sep. Present → collect → lab → result routed to the anticoagulation team inbox → clinician review. Confirming collection creates `…-R02` (valid from 29 Sep). Generation stops after the recurrence end date. |
-| `PLAN-DEMO-002-R01` | Priya Placeholder — TFT + FBC, one-off | **Expired.** Was valid 1–15 Jul. Presenting the token records `EXPIRED` and refuses collection with a visible error. |
+| FBC | `26604007` Complete blood count | `1022441000000101` |
+| INR | `440685005` Calculation of international normalized ratio | `165581004` |
+| U&E | `252167001` Measurement of urea and electrolytes | `1000971000000107` |
+| LFT | `26958001` Hepatic function panel | `997531000000108` |
+| TFT | `35650009` Thyroid panel | `1016851000000107` |
+| HbA1c | `43396009` Hemoglobin A1c measurement | `1003671000000109` |
 
-Golden-path walkthrough: in the console click **Open provider view for this token** (or scan the QR
-with a phone pointed at the same dev server) → **Present token** → **Confirm sample collected** →
-back to the console → **Simulate: lab receives sample** → **Simulate: lab result available → route** →
-**Mark reviewed**.
+Each was confirmed by `$lookup` against the HL7 FHIR terminology server, against both SNOMED CT
+International and the UK Edition (release 20230412), with code, fully specified name and semantic
+tag seen together.
 
-## QR invariant
+**The plan's INR code was wrong** — `49578-6` is a LOINC code, not SNOMED. Corrected above.
 
-The QR encodes **only** `<origin>/#/present/<opaque token>`. The token is a hash of `(planId, sequence)`
-in the demo and carries no clinical or demographic data; the provider view resolves it against the
-request store. `src/domain/workflow.test.ts` asserts the token contains no patient/test identifiers.
+Two things deliberately *not* claimed:
+
+- **PaLM refset membership was not verified.** NHS England's rule (requests = procedure concepts,
+  held in the pathology procedure simple reference set) is confirmed, but the refset content sits
+  behind a TRUD login. "This is the code UK order comms uses" is an inference from the hierarchy
+  rule, not from checking the refset. If a terminology specialist is in the room, soften that claim.
+- **Currency against a 2025/26 UK release.** The reachable UK load was April 2023. None of the six
+  showed as inactive, but it was not diffed against a current release. Five minutes on
+  `termbrowser.nhs.uk` before the demo would close that off.
+
+---
 
 ## Lifecycle
 
 ```
-DRAFT → ACTIVE → PRESENTED → SAMPLE_COLLECTED → LAB_PROCESSING → RESULT_AVAILABLE
-      → AWAITING_CLINICIAN_REVIEW → REVIEWED
-Exceptional: EXPIRED, CANCELLED, INVALID, ROUTING_FAILED (→ retry → AWAITING_CLINICIAN_REVIEW)
+REQUEST_CREATED → QR_ISSUED → PRESENTED_AT_COLLECTION → SAMPLE_COLLECTED
+  → LAB_PROCESSING → RESULT_AVAILABLE
+      ├─ routed   → AWAITING_CLINICIAN_REVIEW → REVIEWED   (terminal)
+      └─ no route → ROUTING_FAILED ⇄ AWAITING_CLINICIAN_REVIEW
+  any non-terminal state → CANCELLED   (terminal)
 ```
 
-- `transition()` — pure, table-driven (`TRANSITIONS`), throws `TransitionError` for disallowed moves;
-  `requiresHuman` steps reject `actor: 'system'`.
-- `present()` — the guarded entry into `PRESENTED`: token must match, request must be `ACTIVE`, and
-  the demo clock must be inside `[validFrom, expiresAt]`. Lapsed requests become `EXPIRED` and throw
-  `ExpiredOnPresentError` (collection refused).
-- `routeResult()` — computes `AWAITING_CLINICIAN_REVIEW` or `ROUTING_FAILED` from the routing
-  destination; the caller never picks the outcome.
-- `nextScheduledRequest()` — creates request `n+1` from the plan at `intervalDays`, stopping at
-  `recurrence.endsAt`. The store calls it when a sample is collected.
+`js/domain/workflow.js` holds this as a transition table. `transition()` is a pure function of a
+snapshot and is the only thing that grants permission; `store.applyStep()` is the only thing that
+writes state, and it asks first. So a guard cannot be bypassed by adding a screen.
 
-## Folder map
+Guards:
 
-| Path | Owns | Notes |
-| --- | --- | --- |
-| `src/domain/types.ts` | `MonitoringPlan`, `MonitoringRequest`, `RequestState`, routing/recurrence types | pure types |
-| `src/domain/workflow.ts` | transition table, `transition`, `present`, `routeResult`, errors | pure functions, fully tested |
-| `src/domain/recurrence.ts` | `demoToken`, `requestFromPlan`, `nextScheduledRequest` | pure |
-| `src/data/demo/plans.json` | editable fictional plans | requests are derived from plans |
-| `src/data/demo/index.ts` | demo clock + seed loaders | |
-| `src/store/requestStore.ts` | in-memory store, `useRequestStore()`, `reset()` | **persistence seam** |
-| `src/ui/App.tsx` | header, hash routing, request list | |
-| `src/ui/RequestDetail.tsx` | specialist console: QR, actions, routing, history | |
-| `src/ui/ProviderView.tsx` | phlebotomy provider: token → request, present/collect | `#/present/<token>` |
-| `src/ui/route.ts` | hash router + `presentUrl()` | |
+- Only listed transitions exist.
+- `requiresHuman` steps reject the `system` actor.
+- Every step is pinned to **one role** — the hospital cannot receive its own specimen, the lab
+  cannot review a result. Blocked steps are shown with the reason rather than hidden.
+- A result cannot be marked available without one recorded.
+- Routing is computed from the ODS lookup, never chosen by a caller.
 
-## Integration points (for a replacement frontend)
+**Plan §2 is applied:** `SAMPLE_COLLECTED → LAB_PROCESSING` and `LAB_PROCESSING → RESULT_AVAILABLE`
+are now `requiresHuman: true` and belong to the lab. `receiveResult(id, summary, actor, detail)`
+takes the lab as the actor instead of hardcoding `'system'`. Routing itself stays automatic.
 
-Everything the UI does goes through two surfaces; a replacement frontend can keep them as-is:
+---
 
-1. **Read:** `useRequestStore()` → `{ plans, requests }`, or `requestStore.getSnapshot()` /
-   `requestStore.byToken(token)`.
-2. **Write:** `requestStore.transition(id, to, actor, note?)`, `requestStore.present(token, provider)`,
-   `requestStore.receiveResult(id, summary)`, `requestStore.reset()`. All throw `TransitionError`
-   (`.code`: `NOT_ALLOWED | HUMAN_REQUIRED | TOKEN_MISMATCH | NOT_YET_VALID | EXPIRED | NOT_PRESENTABLE | NO_ROUTING_DESTINATION`)
-   — surface `.message` to the user.
-3. **QR:** render `presentUrl(request.token)` (see `src/ui/route.ts`) with any QR component; never
-   render anything else into the QR.
-4. **Actors:** `DEMO_ACTOR` / `DEMO_PROVIDER` constants are placeholders for a demo login.
-5. **Clock:** `requestStore.now()` — swap `demoClock` for `() => new Date().toISOString()` for live time.
-6. **Persistence / cross-device:** replace the module-level `state` in `requestStore.ts` with an API or
-   Supabase table; the domain functions are pure and unaffected. Needed before a phone can scan a
-   QR produced on a laptop and see the same record.
-7. **Lab / routing:** `receiveResult` and `routeResult` are the seams for a real lab feed and a real
-   results destination.
+## Files
+
+```
+index.html              The shell. Script order matters: domain → data → store → ui.
+css/app.css             Everything, including the print styles for letter and label.
+js/lib/qrcode.js        QR encoder (byte mode, ECC M, versions 1–10). No CDN, no network.
+js/lib/code39.js        Code 39 barcode for the specimen label.
+js/domain/              Pure. No DOM, no store. Loadable in Node, unit tested.
+  types.js              States, roles, constructors, formatting.
+  workflow.js           Transition table + transition(). The rules live here.
+  tokens.js             Opaque tokens. No PII, ever.
+  recurrence.js         Plan → dated request occurrences.
+  routing.js            ODS resolution, and why routing fails.
+js/data/                Editable demo content.
+  testPanels.js         The SNOMED picklist, with sources and caveats in the header.
+  odsDirectory.js       Distribution directory. RRK07 is missing on purpose.
+  demoPlans.js          The two seeded scenarios.
+js/store/requestStore.js  In-memory store. createPlan, applyStep, receiveResult, routeResult.
+js/ui/                  One file per screen.
+  route.js              Hash routing — console | new | request | present | lab | nhsapp | letter | label
+  consoleView.js        Hospital. Also the patient-delivery actions.
+  newRequestForm.js     §5 intake form.
+  providerView.js       Collection unit. §6 print specimen label.
+  labView.js            §6 the lab, as a real actor.
+  nhsAppMock.js         §7 concept mockup.
+  printViews.js         §7 patient letter, §6 specimen label.
+tests/run.js            node tests/run.js
+```
+
+---
+
+## Notes for whoever picks this up next
+
+- **Tokens carry nothing.** One occurrence, one token, drawn from an alphabet with no `I`, `O`, `0`
+  or `1` so a smudged label cannot be misread. A test asserts across 300 tokens that no patient
+  identifier leaks in.
+- **`null` is never defaulted.** A missing value renders as *Not recorded*, in one place
+  (`ui.field`), in red. Nothing is guessed on a clinical record.
+- **Reasonable adjustments are load-bearing**, not decoration. They are the first panel on the
+  collection unit screen and they appear in the patient letter and the NHS App mockup, because the
+  point of carrying them on the request is that the patient stops having to re-explain themselves.
+- **Adding a backend** later touches `js/store/requestStore.js` and nothing else. The domain layer
+  has no idea where state lives — that was the plan's premise and it still holds.
+- The intake form's site picker includes RRK07 with a visible warning, so you can create a fresh
+  failing case live if a judge asks "what happens when it breaks?"
